@@ -717,6 +717,7 @@ void Gfx::go(GBool topLevel) {
   //int cntSuccToProc = 0;
   //int procUntilTj = 0;
   int procThisOne = 0;
+  int watchingTjs = 0;
   bool skipExecOp ;
   while (!obj.isEOF()) {
     commandAborted = gFalse;
@@ -731,26 +732,53 @@ void Gfx::go(GBool topLevel) {
 	    ++cntMarkedDepth;
 	    fprintf(stderr, "found %s, cntMarkedDepth %d\n", obj.getCmd(),cntMarkedDepth);
 	} else if(obj.isCmd("EMC")) {
+	    //TBD: Appears *may* have file with EMC without corresponding start thingy, investigating
 	    --cntMarkedDepth;
 	    procThisOne=1;
 	    fprintf(stderr, "found %s, cntMarkedDepth %d\n", obj.getCmd(),cntMarkedDepth);
 	} else if(obj.isCmd("Tm")) {
-	    if( (args[0].isReal() && args[0].getReal() == 7.98 )
+	    if( ( (args[0].isReal() && args[0].getReal() == 7.98 )
 	      && (args[1].isInt() && args[1].getInt() == 0) 
 	      && (args[2].isInt() && args[2].getInt() == 0)
 	      && (args[3].isReal() && args[3].getReal() == 7.98)
+	      )
+//	      ||
+//	      //This appears to be airport identifiers, does anything else use this? Yeah, appears so...
+//	      ( (args[0].isInt() && args[0].getInt() == 6 )
+//	      && (args[1].isInt() && args[1].getInt() == 0) 
+//	      && (args[2].isInt() && args[2].getInt() == 0)
+//	      && (args[3].isInt() && args[3].getInt() == 6)
+//	      )
 	      ) {
 	        //cntSuccToProc = 4;
 	        //procUntilTj = 1;
 	        ++cntMarkedDepth;
+	        watchingTjs = 1;
 	    }
 	} else if(cntMarkedDepth && (obj.isCmd("TJ") || obj.isCmd("Tj"))) {
 	    --cntMarkedDepth;
 	    procThisOne = 1;
+	    //auto s = obj.getString();
+	    //fprintf(stderr, "TJs data %s\n", *s);
+	    if(args[0].isString()){
+		    auto s = args[0].getString();
+		    if(s)
+		    fprintf(stderr, "TJs, args0 %s\n", s->getCString());
+		    if(watchingTjs == 1 && (!s->cmpN("( )",3) || !s->cmpN(" ",1))) {
+			 fprintf(stderr, "watchingTjs 2!\n");
+			 watchingTjs = 2;
+		    }
+            }
         }
     }
-    if(cntMarkedDepth < 0) *(char *)0 = 0xff; //bad ouchy!
-    skipExecOp = cntMarkedDepth == 0;
+    //TBD: Is it 'safe' to simply push to zero if we went negative (possibe EMC without matching start thingy)?
+    //prob'ly as safe as the rest of this hack...
+    if(cntMarkedDepth < 0) {
+	//tripped in SW_rear_16JUL2020.pdf.qpdf, don't know if doc is bad or my handling...
+	//*(char *)0 = 0xff; //bad ouchy!
+	cntMarkedDepth = 0;
+    }
+    skipExecOp = cntMarkedDepth == 0 && watchingTjs == 0;
 
     // got a command - execute it
     if (obj.isCmd()) {
@@ -784,6 +812,9 @@ void Gfx::go(GBool topLevel) {
           //    --cntSuccToProc;
           //}
           procThisOne = 0;
+          if(watchingTjs == 2){
+		  watchingTjs = 0;
+	  }
       }
 
       // Update the profile information
