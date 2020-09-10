@@ -713,19 +713,56 @@ void Gfx::go(GBool topLevel) {
   lastAbortCheck = 0;
   numArgs = 0;
   obj = parser->getObj();
+  int cntMarkedDepth = 0;
+  //int cntSuccToProc = 0;
+  //int procUntilTj = 0;
+  int procThisOne = 0;
+  bool skipExecOp ;
   while (!obj.isEOF()) {
     commandAborted = gFalse;
 
+//dlhfi - TBD: - appears somewhere along here can try to hack in auditing for the EmbeddedDocment marked content and other stuff...
+//Seems the embedded content might be easiest containing the airport figure) as they're encapsulated, tho have a nesting to handle...
+//Other stuff at the outer layer of a 'stream' may be a bit harder as its a bit 'disjoint' so to speak... only wanting to
+//operate on an item just after a particular parameter setting to get the airport name...
+//... silly boy, can't print to same stream binary images are being sent to, unlikely they would not thereby be corrupt...
+    if(obj.isCmd()) {
+	if(obj.isCmd("BMC") || obj.isCmd("BDC")) {
+	    ++cntMarkedDepth;
+	    fprintf(stderr, "found %s, cntMarkedDepth %d\n", obj.getCmd(),cntMarkedDepth);
+	} else if(obj.isCmd("EMC")) {
+	    --cntMarkedDepth;
+	    procThisOne=1;
+	    fprintf(stderr, "found %s, cntMarkedDepth %d\n", obj.getCmd(),cntMarkedDepth);
+	} else if(obj.isCmd("Tm")) {
+	    if( (args[0].isReal() && args[0].getReal() == 7.98 )
+	      && (args[1].isInt() && args[1].getInt() == 0) 
+	      && (args[2].isInt() && args[2].getInt() == 0)
+	      && (args[3].isReal() && args[3].getReal() == 7.98)
+	      ) {
+	        //cntSuccToProc = 4;
+	        //procUntilTj = 1;
+	        ++cntMarkedDepth;
+	    }
+	} else if(cntMarkedDepth && (obj.isCmd("TJ") || obj.isCmd("Tj"))) {
+	    --cntMarkedDepth;
+	    procThisOne = 1;
+        }
+    }
+    if(cntMarkedDepth < 0) *(char *)0 = 0xff; //bad ouchy!
+    skipExecOp = cntMarkedDepth == 0;
+
     // got a command - execute it
     if (obj.isCmd()) {
-      if (printCommands) {
-	obj.print(stdout);
+      if (01 || printCommands) {
+	fprintf(stderr,"COMMAND:\n");
+	obj.print(stderr); //out);
 	for (i = 0; i < numArgs; ++i) {
-	  printf(" ");
-	  args[i].print(stdout);
+          fprintf(stderr, " ");
+	  args[i].print(stderr); //out);
 	}
-	printf("\n");
-	fflush(stdout);
+	fprintf(stderr, "\n");
+	fflush(stderr); //out);
       }
       GooTimer *timer = nullptr;
 
@@ -734,7 +771,20 @@ void Gfx::go(GBool topLevel) {
       }
 
       // Run the operation
-      execOp(&obj, args, numArgs);
+      if(!skipExecOp 
+        || obj.isCmd("Q") || obj.isCmd("q") //Our target /EmbeddedDocument's lead off with a 'Q' restore, so need to be sure we got the save, cause poppler complains trying to restore something that wasn't saved...
+        || obj.isCmd("Tf")
+        //|| cntSuccToProc
+        || procThisOne
+        ) 
+      {
+          fprintf(stderr, "found %s, cntMarkedDepth %d\n", obj.getCmd(),cntMarkedDepth);
+          execOp(&obj, args, numArgs);
+          //if(cntSuccToProc) {
+          //    --cntSuccToProc;
+          //}
+          procThisOne = 0;
+      }
 
       // Update the profile information
       if (unlikely(profileCommands)) {
